@@ -8,7 +8,7 @@ def main():
     
     # Example URL - replace with your target document site
     target_url = "https://google.github.io/adk-docs/"
-    output_dir = "/Users/pa/Local Documents/Temporary Space/Doc2MD Output"
+    output_dir = "/Users/pa/Local Documents/Temporary Space/Doc2MD Output/google.github.io:adk-docs"
     
     print(f"🚀 Starting conversion of {target_url}")
     
@@ -21,7 +21,7 @@ def main():
         converter = DocumentConverter(
             base_url=target_url,
             output_dir=output_dir,
-            max_depth=2,
+            max_depth=0,
             delay=1.0,
             exclude_urls=exclude_urls,
             force_triple_backticks=False,
