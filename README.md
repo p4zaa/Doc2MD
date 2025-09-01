@@ -19,6 +19,8 @@ A comprehensive Python library for converting web documents to markdown format w
 - **📚 API**: Full programmatic access to all functionality
 - **🚫 URL Exclusion**: Exclude specific URLs or URL patterns from crawling
 - **🤖 AI Optimization**: Optimized markdown output for RAG databases and AI agents
+- **🔧 Raw Output**: Option to get unprocessed markdown without any cleaning or fixing
+- **🤖 AI Optimization Levels**: Configurable optimization levels (minimal, standard, enhanced)
 
 ## 📦 Installation
 
@@ -112,6 +114,70 @@ doc2md convert https://google.github.io/adk-docs/ \
 - **Multiple exclusions**: Use multiple `--exclude` flags for different patterns
 - **Normalized**: URLs are automatically normalized (query parameters and fragments are removed)
 
+### Raw Output Option
+
+For users who want the original html2text output without any post-processing, use the `--raw` flag:
+
+```bash
+# Get raw markdown without any cleaning or fixing
+doc2md convert https://google.github.io/adk-docs/ --raw
+```
+
+**Raw Output vs Processed Output:**
+
+| Feature | Raw Output | Processed Output |
+|---------|------------|------------------|
+| Code Block Syntax | Original html2text format or ``` (configurable) | Triple backticks (```) |
+| Empty Code Blocks | Preserved as-is | Automatically fixed |
+| Missing First Lines | Preserved as-is | Intelligently reconstructed |
+| AI Optimization | **All levels available** (minimal/standard/enhanced) | Enhanced for AI agents |
+| Content Cleaning | None | HTML cleaning and optimization |
+| Triple Backticks | Optional (--force-triple-backticks) | Always applied |
+| Empty Lines | Reduced to single lines (default) | Reduced to single lines (default) |
+
+**💡 Pro Tip**: Use `--raw --force-triple-backticks` to get raw html2text content with AI-friendly code blocks. This gives you the best of both worlds: original formatting with modern markdown syntax.
+
+**🚀 Advanced Raw Output**: Raw output now supports all AI optimization levels, giving you complete control over AI enhancement while preserving original structure.
+
+**📝 Empty Line Reduction**: By default, Doc2MD reduces consecutive empty lines to single lines in all output modes. This creates cleaner, more readable markdown while preserving document structure. Use `--no-reduce-empty-lines` to disable this feature.
+
+**💰 Token Optimization for RAG Systems**: The new `token-optimized` level provides maximum token reduction for cost-effective RAG operations. Perfect for production systems where token count directly impacts costs.
+
+**Use Cases:**
+- **Raw Output**: When you want to preserve the exact html2text conversion
+- **Raw Output + Triple Backticks**: When you want raw content but need AI-friendly code blocks
+- **Raw Output + AI Optimization**: When you want raw content with customizable AI enhancement
+- **Processed Output**: When you need clean, AI-optimized markdown for RAG systems
+
+### AI Optimization Levels
+
+Doc2MD provides four levels of AI optimization that work with both raw and processed output:
+
+**Minimal AI Optimization (`--ai-optimization minimal`):**
+- Basic code block formatting
+- Preserves original structure
+- Lightweight processing
+- Best for: Quick conversions, preserving original formatting
+
+**Standard AI Optimization (`--ai-optimization standard`):**
+- Language hints for code blocks
+- Code block optimization
+- Standard AI enhancements
+- Best for: General AI consumption, RAG systems
+
+**Enhanced AI Optimization (`--ai-optimization enhanced`):**
+- Semantic markers for headers, lists, and code
+- Maximum AI compatibility
+- Advanced language detection
+- Best for: High-end RAG systems, AI training data
+
+**Token-Optimized AI Optimization (`--ai-optimization token-optimized`):**
+- Maximum token reduction for cost-effective RAG systems
+- Removes excessive whitespace and punctuation
+- Eliminates semantic markers to save tokens
+- Standardizes formatting for consistency
+- Best for: Cost-sensitive RAG systems, high-volume processing
+
 ### Command Line Usage
 
 ```bash
@@ -132,6 +198,38 @@ doc2md preview https://google.github.io/adk-docs/
 
 # Validate URL accessibility
 doc2md validate https://google.github.io/adk-docs/
+
+# Get raw markdown output (no post-processing)
+doc2md convert https://google.github.io/adk-docs/ --raw
+
+# Different AI optimization levels
+doc2md convert https://google.github.io/adk-docs/ --ai-optimization minimal
+doc2md convert https://google.github.io/adk-docs/ --ai-optimization standard
+doc2md convert https://google.github.io/adk-docs/ --ai-optimization enhanced
+
+# Combine raw output with AI optimization
+doc2md convert https://google.github.io/adk-docs/ --raw --ai-optimization enhanced
+
+# Raw output with triple backticks (best of both worlds)
+doc2md convert https://google.github.io/adk-docs/ --raw --force-triple-backticks
+
+# Raw output with enhanced AI optimization
+doc2md convert https://google.github.io/adk-docs/ --raw --ai-optimization enhanced
+
+# Raw output with minimal AI optimization and triple backticks
+doc2md convert https://google.github.io/adk-docs/ --raw --ai-optimization minimal --force-triple-backticks
+
+# Disable empty line reduction (keep all empty lines)
+doc2md convert https://google.github.io/adk-docs/ --no-reduce-empty-lines
+
+# Raw output with enhanced AI optimization and no empty line reduction
+doc2md convert https://google.github.io/adk-docs/ --raw --ai-optimization enhanced --no-reduce-empty-lines
+
+# Token-optimized for cost-effective RAG systems
+doc2md convert https://google.github.io/adk-docs/ --ai-optimization token-optimized
+
+# Raw output with token optimization (maximum cost savings)
+doc2md convert https://google.github.io/adk-docs/ --raw --ai-optimization token-optimized
 ```
 
 ### Programmatic Usage
@@ -145,7 +243,9 @@ converter = DocumentConverter(
     output_dir="docs",
     max_depth=0,  # 0 = unlimited
     delay=1.0,    # 1 second between requests
-    exclude_urls=["https://google.github.io/adk-docs/api-reference/"]  # Exclude API docs
+    exclude_urls=["https://google.github.io/adk-docs/api-reference/"],  # Exclude API docs
+    raw_output=False,  # Enable post-processing (default)
+    ai_optimization_level="enhanced"  # Maximum AI optimization
 )
 
 # Convert the entire site

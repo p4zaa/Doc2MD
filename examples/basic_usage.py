@@ -43,7 +43,12 @@ def main():
             output_dir="example_output",
             max_depth=0,
             delay=1.0,
-            exclude_urls=exclude_urls
+            exclude_urls=exclude_urls,
+            generate_readme=False,  # Disable README.md generation
+            raw_output=False,  # Enable post-processing (cleaned output)
+            ai_optimization_level="enhanced",  # Maximum AI optimization
+            force_triple_backticks=True,  # Force triple backticks for AI compatibility
+            reduce_empty_lines=True  # Reduce empty lines for cleaner output
         )
         
         # Optional: Validate URL before conversion
@@ -80,7 +85,10 @@ def main():
         print(f"🌐 Site domain: {stats['site_domain']}")
         print(f"🔍 Crawl depth: {stats['crawl_depth']}")
         
-        print(f"\n📖 Start browsing your converted documents in: {result['output_directory']}/README.md")
+        if converter.generate_readme:
+            print(f"\n📖 Start browsing your converted documents in: {result['output_directory']}/README.md")
+        else:
+            print(f"\n📁 Your converted documents are in: {result['output_directory']}/")
         
     except Exception as e:
         print(f"❌ Conversion failed: {e}")

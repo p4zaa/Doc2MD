@@ -21,11 +21,15 @@ def main():
         converter = DocumentConverter(
             base_url=target_url,
             output_dir=output_dir,
-            max_depth=0,
+            max_depth=1,
             delay=1.0,
             exclude_urls=exclude_urls,
-            force_triple_backticks=False,
-            debug=False
+            force_triple_backticks=True,
+            debug=False,
+            generate_readme=False,  # Disable README.md generation
+            raw_output=True,  # Raw output with token-optimized AI optimization
+            ai_optimization_level="enhanced",
+            reduce_empty_lines=True  # Reduce empty lines for cleaner output
         )
         
         # Optional: Validate URL before conversion
@@ -51,7 +55,10 @@ def main():
         print(f"🌐 Site domain: {stats['site_domain']}")
         print(f"🔍 Crawl depth: {stats['crawl_depth']}")
         
-        print(f"\n📖 Start browsing your converted documents in: {result['output_directory']}/README.md")
+        print(f"\n🔧 Raw output mode: Enabled (no post-processing)")
+        print(f"🤖 AI optimization level: Token-optimized")
+        print(f"📖 README generation: Disabled")
+        print(f"\n📁 Start browsing your converted documents in: {result['output_directory']}")
         
     except Exception as e:
         print(f"❌ Conversion failed: {e}")

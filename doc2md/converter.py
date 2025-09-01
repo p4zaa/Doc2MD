@@ -23,7 +23,9 @@ class DocumentConverter:
     
     def __init__(self, base_url: str, output_dir: str = "docs", 
                  max_depth: int = 0, delay: float = 1.0, exclude_urls: List[str] = None,
-                 force_triple_backticks: bool = True, debug: bool = False):
+                 force_triple_backticks: bool = True, debug: bool = False, 
+                 generate_readme: bool = True, raw_output: bool = False,
+                 ai_optimization_level: str = "standard", reduce_empty_lines: bool = True):
         """
         Initialize the document converter.
         
@@ -35,6 +37,10 @@ class DocumentConverter:
             exclude_urls: List of URLs or URL patterns to exclude from crawling
             force_triple_backticks: Whether to force triple backticks (```) instead of [code] syntax
             debug: Whether to enable debug logging for troubleshooting
+            generate_readme: Whether to generate README.md files for navigation
+            raw_output: Whether to output raw markdown without any cleaning or fixing
+            ai_optimization_level: Level of AI optimization ("minimal", "standard", "enhanced")
+            reduce_empty_lines: Whether to reduce consecutive empty lines to single lines (default: True)
         """
         self.base_url = base_url.rstrip('/')
         self.output_dir = Path(output_dir)
@@ -43,10 +49,14 @@ class DocumentConverter:
         self.exclude_urls = exclude_urls or []
         self.force_triple_backticks = force_triple_backticks
         self.debug = debug
+        self.generate_readme = generate_readme
+        self.raw_output = raw_output
+        self.ai_optimization_level = ai_optimization_level
+        self.reduce_empty_lines = reduce_empty_lines
         
         # Initialize components
         self.crawler = WebCrawler(base_url, max_depth, delay, self.exclude_urls)
-        self.markdown_generator = MarkdownGenerator(base_url, optimize_for_ai=True)
+        self.markdown_generator = MarkdownGenerator(base_url, optimize_for_ai=True, raw_output=self.raw_output, ai_optimization_level=self.ai_optimization_level, force_triple_backticks=self.force_triple_backticks, reduce_empty_lines=self.reduce_empty_lines)
         self.link_tree_generator = LinkTreeGenerator(base_url, output_dir)
         
         # Conversion results
@@ -73,8 +83,7 @@ class DocumentConverter:
             ]
         )
         
-        if self.debug:
-            logger.info("🔍 Debug logging enabled - you'll see detailed information about code block processing")
+
         
     def _create_output_directory(self):
         """Create the output directory if it doesn't exist."""
@@ -184,12 +193,15 @@ class DocumentConverter:
             logger.info("Step 3: Converting to markdown...")
             self._save_markdown_files()
             
-            # Step 6: Generate navigation and README files
-            logger.info("Step 4: Generating navigation...")
-            self.link_tree_generator.create_all_readmes(
-                self.url_mapping, 
-                self.site_structure
-            )
+            # Step 6: Generate navigation and README files (if enabled)
+            if self.generate_readme:
+                logger.info("Step 4: Generating navigation...")
+                self.link_tree_generator.create_all_readmes(
+                    self.url_mapping, 
+                    self.site_structure
+                )
+            else:
+                logger.info("Step 4: Skipping README generation (disabled)")
             
             # Step 7: Generate conversion summary
             summary = self._generate_summary()

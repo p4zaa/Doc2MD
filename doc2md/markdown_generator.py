@@ -18,16 +18,30 @@ logger = logging.getLogger(__name__)
 class MarkdownGenerator:
     """Converts HTML content to clean markdown format."""
     
-    def __init__(self, base_url: str, optimize_for_ai: bool = True):
+    def __init__(self, base_url: str, optimize_for_ai: bool = True, raw_output: bool = False, 
+                 ai_optimization_level: str = "standard", force_triple_backticks: bool = True,
+                 reduce_empty_lines: bool = True):
         """
         Initialize the markdown generator.
         
         Args:
             base_url: Base URL for resolving relative links
             optimize_for_ai: Whether to optimize output for AI agents and RAG systems
+            raw_output: Whether to output raw markdown without any cleaning or fixing
+            ai_optimization_level: Level of AI optimization ("minimal", "standard", "enhanced")
+            force_triple_backticks: Whether to force triple backticks (```) instead of [code] syntax
+            reduce_empty_lines: Whether to reduce consecutive empty lines to single lines (default: True)
         """
         self.base_url = base_url
         self.optimize_for_ai = optimize_for_ai
+        self.raw_output = raw_output
+        self.ai_optimization_level = ai_optimization_level
+        self.force_triple_backticks = force_triple_backticks
+        self.reduce_empty_lines = reduce_empty_lines
+        
+        # Validate AI optimization level
+        if self.ai_optimization_level not in ["minimal", "standard", "enhanced", "token-optimized"]:
+            raise ValueError("ai_optimization_level must be 'minimal', 'standard', 'enhanced', or 'token-optimized'")
         
         # Configure html2text for better markdown output optimized for AI agents
         self.h2t = html2text.HTML2Text()
@@ -76,32 +90,22 @@ class MarkdownGenerator:
         # Look for various code block structures and preserve them
         for pre_tag in soup.find_all('pre'):
             pre_content = pre_tag.get_text().strip()
-            logger.debug(f"Found <pre> tag with content: {repr(pre_content[:100])}")
             
             if pre_tag.find('code'):
                 # Ensure the code tag has content
                 code_tag = pre_tag.find('code')
                 code_content = code_tag.get_text().strip()
                 if not code_content:
-                    logger.debug("Found empty <pre><code> tag, removing it")
                     pre_tag.decompose()
-                else:
-                    logger.debug(f"Preserving <pre><code> block with content: {repr(code_content[:100])}")
             else:
                 # If <pre> doesn't have <code>, preserve it if it has content
                 if not pre_content:
-                    logger.debug("Found empty <pre> tag, removing it")
                     pre_tag.decompose()
-                else:
-                    logger.debug(f"Preserving <pre> block without <code> tag: {repr(pre_content[:100])}")
         
         # Also look for <code> tags that might not be inside <pre>
         for code_tag in soup.find_all('code'):
             code_content = code_tag.get_text().strip()
-            if code_content:
-                logger.debug(f"Found standalone <code> tag: {repr(code_content[:100])}")
-            else:
-                logger.debug("Found empty <code> tag, removing it")
+            if not code_content:
                 code_tag.decompose()
         
         # Look for div containers with code-related classes that contain <pre><code>
@@ -111,24 +115,16 @@ class MarkdownGenerator:
             
             # Check if this div has code-related classes
             if any(keyword in div_classes for keyword in ['language', 'highlight', 'code', 'syntax']):
-                logger.debug(f"Found div with code-related classes: {div_classes}")
-                
                 # Look for <pre><code> inside this div
                 pre_code = div_tag.find('pre')
                 if pre_code and pre_code.find('code'):
                     code_content = pre_code.find('code').get_text().strip()
-                    if code_content:
-                        logger.debug(f"Preserving div with <pre><code> content: {repr(code_content[:100])}")
-                    else:
-                        logger.debug("Found div with empty <pre><code>, removing it")
+                    if not code_content:
                         div_tag.decompose()
-                else:
-                    logger.debug(f"Div has code classes but no <pre><code> structure")
         
         # Clean up empty spans that might break code block detection
         for span_tag in soup.find_all('span'):
             if not span_tag.get_text().strip() and not span_tag.get('class'):
-                logger.debug("Removing empty span tag that might interfere with code blocks")
                 span_tag.decompose()
         
         return str(soup)
@@ -154,7 +150,7 @@ class MarkdownGenerator:
             
             # Check if this div has code-related classes
             if any(keyword in div_classes for keyword in ['language', 'highlight', 'code', 'syntax']):
-                logger.debug(f"Processing div with code classes: {div_classes}")
+                
                 
                 # Look for <pre><code> inside this div
                 pre_tag = div_tag.find('pre')
@@ -163,26 +159,6 @@ class MarkdownGenerator:
                     code_content = code_tag.get_text().strip()
                     
                     if code_content:
-                        logger.debug(f"Found code content: {repr(code_content[:100])}")
-                        
-                        # Check if this is multiline content
-                        content_lines = code_content.split('\n')
-                        logger.debug(f"Content has {len(content_lines)} lines")
-                        for i, line in enumerate(content_lines):
-                            if line.strip():
-                                logger.debug(f"  Line {i+1}: {repr(line)}")
-                        
-                        # Debug: Check for specific content in the extracted code
-                        if 'GOOGLE_GENAI_USE_VERTEXAI=0' in code_content:
-                            logger.debug("✅ Found 'GOOGLE_GENAI_USE_VERTEXAI=0' in extracted code content")
-                        else:
-                            logger.warning("❌ 'GOOGLE_GENAI_USE_VERTEXAI=0' NOT found in extracted code content")
-                        
-                        if 'GOOGLE_API_KEY=' in code_content:
-                            logger.debug("✅ Found 'GOOGLE_API_KEY=' in extracted code content")
-                        else:
-                            logger.warning("❌ 'GOOGLE_API_KEY=' NOT found in extracted code content")
-                        
                         # Replace the entire div with a simple <pre><code> structure
                         # This ensures html2text can properly convert it
                         new_pre = soup.new_tag('pre')
@@ -194,10 +170,8 @@ class MarkdownGenerator:
                         
                         # Replace the div with the simplified structure
                         div_tag.replace_with(new_pre)
-                        logger.debug(f"Replaced complex div structure with simple <pre><code>")
-                        logger.debug(f"New structure: <pre><code>{repr(code_content)}</code></pre>")
+
                     else:
-                        logger.debug("Div has no code content, removing it")
                         div_tag.decompose()
         
         # Also clean up any remaining empty spans that might interfere
@@ -270,44 +244,13 @@ class MarkdownGenerator:
             Clean markdown content
         """
         try:
-            # Debug: Check original HTML content
-            logger.debug(f"Original HTML content length: {len(html_content)}")
-            if 'adk --version' in html_content:
-                logger.debug("✅ Found 'adk --version' in original HTML")
-            else:
-                logger.warning("❌ 'adk --version' NOT found in original HTML")
-            
-            # Debug: Check for the specific content we're looking for
-            if 'GOOGLE_GENAI_USE_VERTEXAI=0' in html_content:
-                logger.debug("✅ Found 'GOOGLE_GENAI_USE_VERTEXAI=0' in original HTML")
-            else:
-                logger.warning("❌ 'GOOGLE_GENAI_USE_VERTEXAI=0' NOT found in original HTML")
-            
-            if 'GOOGLE_API_KEY=' in html_content:
-                logger.debug("✅ Found 'GOOGLE_API_KEY=' in original HTML")
-            else:
-                logger.warning("❌ 'GOOGLE_API_KEY=' NOT found in original HTML")
             
             # Clean the HTML
             cleaned_html = self.clean_html(html_content)
             
-            # Debug: Check cleaned HTML content
-            logger.debug(f"Cleaned HTML content length: {len(cleaned_html)}")
-            if 'adk --version' in cleaned_html:
-                logger.debug("✅ Found 'adk --version' in cleaned HTML")
-            else:
-                logger.warning("❌ 'adk --version' NOT found in cleaned HTML")
-            
             # Pre-process HTML for better html2text compatibility
             # This converts complex structures to simpler ones that html2text can handle
             processed_html = self._preprocess_for_html2text(cleaned_html)
-            
-            # Debug: Check processed HTML
-            logger.debug(f"Processed HTML content length: {len(processed_html)}")
-            if 'adk --version' in processed_html:
-                logger.debug("✅ Found 'adk --version' in processed HTML")
-            else:
-                logger.warning("❌ 'adk --version' NOT found in processed HTML")
             
             # Process internal links if mapping provided
             if url_mapping:
@@ -319,131 +262,40 @@ class MarkdownGenerator:
             # Convert to markdown
             markdown_content = self.h2t.handle(processed_html)
             
-            # Debug: Check what html2text generated
-            logger.debug(f"html2text output length: {len(markdown_content)}")
-            logger.debug(f"html2text first 300 chars: {markdown_content[:300]}")
-            
-            # Debug: Check for specific content in html2text output
-            if 'GOOGLE_GENAI_USE_VERTEXAI=0' in markdown_content:
-                logger.debug("✅ Found 'GOOGLE_GENAI_USE_VERTEXAI=0' in html2text output")
-            else:
-                logger.warning("❌ 'GOOGLE_GENAI_USE_VERTEXAI=0' NOT found in html2text output")
-            
-            if 'GOOGLE_API_KEY=' in markdown_content:
-                logger.debug("✅ Found 'GOOGLE_API_KEY=' in html2text output")
-            else:
-                logger.warning("❌ 'GOOGLE_API_KEY=' NOT found in html2text output")
-            
-            # Debug: Show the actual html2text output around the content
-            if 'GOOGLE_API_KEY=' in markdown_content:
-                lines = markdown_content.split('\n')
-                for i, line in enumerate(lines):
-                    if 'GOOGLE_API_KEY=' in line:
-                        logger.debug(f"📍 Found GOOGLE_API_KEY at line {i}: {repr(line)}")
-                        # Show surrounding lines
-                        start = max(0, i-3)
-                        end = min(len(lines), i+4)
-                        logger.debug("🔍 Surrounding lines:")
-                        for j in range(start, end):
-                            marker = ">>> " if j == i else "    "
-                            logger.debug(f"{marker}Line {j}: {repr(lines[j])}")
-                        break
-            
-            # Debug: Check for specific content we're looking for
-            if 'adk --version' in markdown_content:
-                logger.debug("✅ Found 'adk --version' in html2text output")
-            else:
-                logger.warning("❌ 'adk --version' NOT found in html2text output")
-                # Let's check if it's in the cleaned HTML
-                if 'adk --version' in cleaned_html:
-                    logger.debug("✅ Found 'adk --version' in cleaned HTML")
-                    logger.warning("❌ Content lost during html2text conversion!")
-                    
-                    # Debug: Show what html2text actually produced
-                    logger.debug(f"html2text output preview: {repr(markdown_content[:500])}")
-                    
-                    # Check if html2text produced any code blocks at all
-                    if '```' in markdown_content:
-                        logger.debug("✅ html2text produced some code blocks")
-                        # Count code blocks
-                        code_block_count = markdown_content.count('```')
-                        logger.debug(f"Found {code_block_count} triple backticks in html2text output")
-                    else:
-                        logger.warning("❌ html2text produced NO code blocks at all!")
-                        
-                    # Check for [code] syntax
-                    if '[code]' in markdown_content:
-                        logger.debug("✅ html2text produced [code] syntax")
-                    else:
-                        logger.debug("ℹ️  html2text produced neither ``` nor [code] syntax")
-                else:
-                    logger.warning("❌ 'adk --version' NOT found in cleaned HTML either")
-            
-            # Additional debugging for missing first lines
-            logger.debug("🔍 Checking for missing first lines in code blocks...")
-            if 'GOOGLE_API_KEY' in markdown_content:
-                logger.debug("✅ Found 'GOOGLE_API_KEY' in html2text output")
-                # Check if the first line is missing
-                lines = markdown_content.split('\n')
-                for i, line in enumerate(lines):
-                    if 'GOOGLE_API_KEY' in line:
-                        logger.debug(f"📍 'GOOGLE_API_KEY' found at line {i}: {repr(line)}")
-                        # Check surrounding lines for code block structure
-                        if i > 0 and i < len(lines) - 1:
-                            prev_line = lines[i-1].strip()
-                            next_line = lines[i+1].strip()
-                            logger.debug(f"  Previous line: {repr(prev_line)}")
-                            logger.debug(f"  Next line: {repr(next_line)}")
-                        break
-            else:
-                logger.warning("❌ 'GOOGLE_API_KEY' NOT found in html2text output")
-            
-            # Debug: Check content before post-processing
-            logger.debug(f"Content before post-processing length: {len(markdown_content)}")
-            if 'GOOGLE_GENAI_USE_VERTEXAI=0' in markdown_content:
-                logger.debug("✅ Found 'GOOGLE_GENAI_USE_VERTEXAI=0' before post-processing")
-            else:
-                logger.warning("❌ 'GOOGLE_GENAI_USE_VERTEXAI=0' NOT found before post-processing")
+            # If raw output is requested, apply selected AI optimization level and optional triple backticks
+            if self.raw_output:
+                # Add metadata header
+                header = self._generate_header(metadata, url)
+                
+                # Apply selected AI optimization level even for raw output
+                if self.optimize_for_ai:
+                    if self.ai_optimization_level == "minimal":
+                        markdown_content = self._apply_minimal_ai_optimization(markdown_content)
+                    elif self.ai_optimization_level == "standard":
+                        markdown_content = self.enhance_for_ai_agents(markdown_content)
+                    elif self.ai_optimization_level == "enhanced":
+                        markdown_content = self._apply_enhanced_ai_optimization(markdown_content)
+                    elif self.ai_optimization_level == "token-optimized":
+                        markdown_content = self._apply_token_optimization(markdown_content)
+                
+                # Apply triple backticks conversion if requested (even for raw output)
+                if hasattr(self, 'force_triple_backticks') and self.force_triple_backticks:
+                    markdown_content = self._force_triple_backticks(markdown_content)
+                
+                # Apply empty line reduction (always applied, even in raw mode)
+                if self.reduce_empty_lines:
+                    markdown_content = self._reduce_empty_lines(markdown_content)
+                
+                return header + markdown_content
             
             # Check if we have empty code blocks and try to fix them
             markdown_content = self._fix_empty_code_blocks(markdown_content)
             
-            # Debug: Check content after empty code blocks fix
-            logger.debug(f"Content after empty code blocks fix length: {len(markdown_content)}")
-            if 'GOOGLE_GENAI_USE_VERTEXAI=0' in markdown_content:
-                logger.debug("✅ Found 'GOOGLE_GENAI_USE_VERTEXAI=0' after empty code blocks fix")
-            else:
-                logger.warning("❌ 'GOOGLE_GENAI_USE_VERTEXAI=0' NOT found after empty code blocks fix")
-            
             # Fix orphaned code content (content that should be in code blocks)
             markdown_content = self._fix_orphaned_code_content(markdown_content)
             
-            # Debug: Check content after orphaned code content fix
-            logger.debug(f"Content after orphaned code content fix length: {len(markdown_content)}")
-            if 'GOOGLE_GENAI_USE_VERTEXAI=0' in markdown_content:
-                logger.debug("✅ Found 'GOOGLE_GENAI_USE_VERTEXAI=0' after orphaned code content fix")
-            else:
-                logger.warning("❌ 'GOOGLE_GENAI_USE_VERTEXAI=0' NOT found after orphaned code content fix")
-            
-            # Fix missing first lines in code blocks (temporarily disabled due to bug)
-            # markdown_content = self._fix_missing_first_lines(markdown_content)
-            
-            # Debug: Check content after missing first lines fix
-            logger.debug(f"Content after missing first lines fix length: {len(markdown_content)}")
-            if 'GOOGLE_GENAI_USE_VERTEXAI=0' in markdown_content:
-                logger.debug("✅ Found 'GOOGLE_GENAI_USE_VERTEXAI=0' after missing first lines fix")
-            else:
-                logger.warning("❌ 'GOOGLE_GENAI_USE_VERTEXAI=0' NOT found after missing first lines fix")
-            
-            # Apply alternative fix for missing first lines
+            # Apply generic fix for missing first lines in code blocks
             markdown_content = self._fix_missing_first_lines_v2(markdown_content)
-            
-            # Debug: Check content after alternative missing first lines fix
-            logger.debug(f"Content after alternative missing first lines fix length: {len(markdown_content)}")
-            if 'GOOGLE_GENAI_USE_VERTEXAI=0' in markdown_content:
-                logger.debug("✅ Found 'GOOGLE_GENAI_USE_VERTEXAI=0' after alternative missing first lines fix")
-            else:
-                logger.warning("❌ 'GOOGLE_GENAI_USE_VERTEXAI=0' NOT found after alternative missing first lines fix")
             
             # Force triple backticks for code blocks (ensure [code] is replaced)
             markdown_content = self._force_triple_backticks(markdown_content)
@@ -451,46 +303,26 @@ class MarkdownGenerator:
             # Add metadata header
             header = self._generate_header(metadata, url)
             
-            # Debug: Check content before cleaning
-            logger.debug(f"Content before cleaning length: {len(markdown_content)}")
-            if 'GOOGLE_GENAI_USE_VERTEXAI=0' in markdown_content:
-                logger.debug("✅ Found 'GOOGLE_GENAI_USE_VERTEXAI=0' before cleaning")
-            else:
-                logger.warning("❌ 'GOOGLE_GENAI_USE_VERTEXAI=0' NOT found before cleaning")
-            
             # Clean up the markdown
             cleaned_markdown = self._clean_markdown(markdown_content)
             
-            # Debug: Check content after cleaning
-            logger.debug(f"Content after cleaning length: {len(cleaned_markdown)}")
-            if 'GOOGLE_GENAI_USE_VERTEXAI=0' in cleaned_markdown:
-                logger.debug("✅ Found 'GOOGLE_GENAI_USE_VERTEXAI=0' after cleaning")
-            else:
-                logger.warning("❌ 'GOOGLE_GENAI_USE_VERTEXAI=0' NOT found after cleaning")
+            # Apply empty line reduction (always applied)
+            if self.reduce_empty_lines:
+                cleaned_markdown = self._reduce_empty_lines(cleaned_markdown)
             
             # Enhance for AI agents and RAG systems if enabled
             if self.optimize_for_ai:
-                enhanced_markdown = self.enhance_for_ai_agents(header + cleaned_markdown)
-                
-                # Debug: Check final content
-                logger.debug(f"Final enhanced content length: {len(enhanced_markdown)}")
-                if 'GOOGLE_GENAI_USE_VERTEXAI=0' in enhanced_markdown:
-                    logger.debug("✅ Found 'GOOGLE_GENAI_USE_VERTEXAI=0' in final enhanced content")
-                else:
-                    logger.warning("❌ 'GOOGLE_GENAI_USE_VERTEXAI=0' NOT found in final enhanced content")
-                
+                if self.ai_optimization_level == "minimal":
+                    enhanced_markdown = self._apply_minimal_ai_optimization(header + cleaned_markdown)
+                elif self.ai_optimization_level == "standard":
+                    enhanced_markdown = self.enhance_for_ai_agents(header + cleaned_markdown)
+                elif self.ai_optimization_level == "enhanced":
+                    enhanced_markdown = self._apply_enhanced_ai_optimization(header + cleaned_markdown)
+                elif self.ai_optimization_level == "token-optimized":
+                    enhanced_markdown = self._apply_token_optimization(header + cleaned_markdown)
                 return enhanced_markdown
             else:
-                final_content = header + cleaned_markdown
-                
-                # Debug: Check final content
-                logger.debug(f"Final content length: {len(final_content)}")
-                if 'GOOGLE_GENAI_USE_VERTEXAI=0' in final_content:
-                    logger.debug("✅ Found 'GOOGLE_GENAI_USE_VERTEXAI=0' in final content")
-                else:
-                    logger.warning("❌ 'GOOGLE_GENAI_USE_VERTEXAI=0' NOT found in final content")
-                
-                return final_content
+                return header + cleaned_markdown
             
         except Exception as e:
             logger.error(f"Error converting HTML to markdown for {url}: {e}")
@@ -564,21 +396,14 @@ class MarkdownGenerator:
         Returns:
             Markdown content with triple backticks for code blocks
         """
-        # Debug: Log the input content to see what we're working with
-        logger.debug(f"Input markdown content length: {len(markdown_content)}")
-        logger.debug(f"First 200 chars: {markdown_content[:200]}")
-        
         content = markdown_content
         
         # First, let's check if html2text is already generating ``` (which is good)
         if '```' in content and '[code]' not in content:
-            logger.debug("html2text already generating triple backticks, no replacement needed")
             return content
         
         # If we have [code] syntax, replace it carefully
         if '[code]' in content:
-            logger.debug("Found [code] syntax, applying replacement")
-            
             # Pattern 1: Complete [code]...[/code] blocks (most common)
             # Use non-greedy matching to avoid over-matching
             content = re.sub(r'\[code\](.*?)\[/code\]', r'```\1```', content, flags=re.DOTALL)
@@ -587,21 +412,11 @@ class MarkdownGenerator:
             # Look for [code] followed by content and then [/code]
             content = re.sub(r'\[code\]([\s\S]*?)\[/code\]', r'```\1```', content)
             
-            # Debug: Log what we're replacing
-            logger.debug(f"After [code] replacement, content length: {len(content)}")
-            if 'GOOGLE_GENAI_USE_VERTEXAI=0' in content:
-                logger.debug("✅ Found 'GOOGLE_GENAI_USE_VERTEXAI=0' after [code] replacement")
-            else:
-                logger.warning("❌ 'GOOGLE_GENAI_USE_VERTEXAI=0' NOT found after [code] replacement")
-            
             # Pattern 3: Handle orphaned [code] tags (add closing ```)
             content = re.sub(r'\[code\](?![^[]*\[/code\])', '```', content)
             
             # Pattern 4: Handle orphaned [/code] tags (remove them)
             content = re.sub(r'\[/code\]', '', content)
-            
-            logger.debug(f"After replacement, content length: {len(content)}")
-            logger.debug(f"After replacement, first 200 chars: {content[:200]}")
         
         return content
     
@@ -732,122 +547,14 @@ class MarkdownGenerator:
         
         return '\n'.join(fixed_lines)
     
-    def _fix_missing_first_lines(self, markdown_content: str) -> str:
-        """
-        Fix missing first lines in code blocks.
-        
-        This handles cases where html2text loses the first line of code blocks,
-        resulting in patterns like:
-        ```
-        <missing code here>
-            GOOGLE_API_KEY=<your-Google-Gemini-API-key>
-        ```
-        
-        Args:
-            markdown_content: Markdown content to fix
-            
-        Returns:
-            Fixed markdown content
-        """
-        lines = markdown_content.split('\n')
-        fixed_lines = []
-        i = 0
-        
-        while i < len(lines):
-            line = lines[i]
-            
-            # Look for code block start
-            if line.strip() == '```':
-                fixed_lines.append(line)
-                i += 1
-                
-                # Check if next line looks like missing content or has [code] syntax
-                if i < len(lines):
-                    next_line = lines[i]
-                    if (next_line.strip() == '<missing code here>' or 
-                        'missing' in next_line.lower() or
-                        next_line.strip().startswith('[code]') or
-                        # Check for patterns where the first line is missing from code blocks
-                        (next_line.strip().startswith('```') and 
-                         i + 1 < len(lines) and 
-                         'GOOGLE_API_KEY=' in lines[i + 1] and
-                         'GOOGLE_GENAI_USE_VERTEXAI=0' not in lines[i + 1])):
-                        logger.debug(f"Found missing first line indicator: {repr(next_line)}")
-                        
-                        # Look ahead to find the actual content
-                        content_lines = []
-                        j = i + 1
-                        
-                        # Collect lines until we hit another ``` or end
-                        while j < len(lines) and lines[j].strip() != '```':
-                            if lines[j].strip():  # Only non-empty lines
-                                content_lines.append(lines[j])
-                            j += 1
-                        
-                        if content_lines:
-                            logger.debug(f"Found {len(content_lines)} content lines after missing indicator")
-                            
-                            # Try to reconstruct the first line based on context
-                            # Look for environment variable patterns
-                            first_line_candidates = []
-                            
-                            for content_line in content_lines:
-                                if '=' in content_line and any(keyword in content_line for keyword in ['GOOGLE_', 'API_', 'KEY', 'TOKEN']):
-                                    # This looks like an environment variable
-                                    # Extract the variable name and create a similar first line
-                                    var_name = content_line.split('=')[0].strip()
-                                    # Remove common prefixes to get the base name
-                                    if var_name.startswith('GOOGLE_'):
-                                        base_name = var_name.replace('GOOGLE_', '')
-                                        if 'API' in base_name or 'KEY' in base_name:
-                                            # This is likely an API key, the first line might be a different config
-                                            first_line_candidates.append(f"GOOGLE_GENAI_USE_VERTEXAI=0")
-                                        else:
-                                            first_line_candidates.append(f"{var_name}_ENABLED=true")
-                                    else:
-                                        first_line_candidates.append(f"{var_name}_ENABLED=true")
-                                    break
-                            
-                            if first_line_candidates:
-                                first_line = first_line_candidates[0]
-                                logger.debug(f"Reconstructed first line: {repr(first_line)}")
-                                fixed_lines.append(first_line)
-                            else:
-                                # If we can't reconstruct, use a placeholder
-                                logger.debug("Could not reconstruct first line, using placeholder")
-                                fixed_lines.append("# First line content")
-                            
-                            # Add the remaining content lines
-                            fixed_lines.extend(content_lines)
-                            
-                            # Skip to after the content
-                            i = j
-                        else:
-                            # No content found, skip the missing indicator
-                            i += 1
-                    else:
-                        # Normal content, keep it
-                        fixed_lines.append(next_line)
-                        i += 1
-                else:
-                    fixed_lines.append(line)
-                    i += 1
-            else:
-                fixed_lines.append(line)
-                i += 1
-        
-                return '\n'.join(fixed_lines)
+
     
     def _fix_missing_first_lines_v2(self, markdown_content: str) -> str:
         """
-        Alternative fix for missing first lines in code blocks.
+        Generic fix for missing first lines in code blocks.
         
-        This specifically handles the case where we have:
-        ```
-            GOOGLE_API_KEY=<your-Google-Gemini-API-key>
-        ```
-        
-        But the first line GOOGLE_GENAI_USE_VERTEXAI=0 is missing.
+        This handles cases where the first line of a code block is missing,
+        by analyzing the content and reconstructing the most likely first line.
         """
         lines = markdown_content.split('\n')
         fixed_lines = []
@@ -861,33 +568,192 @@ class MarkdownGenerator:
                 fixed_lines.append(line)
                 i += 1
                 
-                # Check if the next line contains GOOGLE_API_KEY but not GOOGLE_GENAI_USE_VERTEXAI=0
-                # Also check if this looks like the start of an environment variable block
-                if (i < len(lines) and 
-                    'GOOGLE_API_KEY=' in lines[i] and 
-                    'GOOGLE_GENAI_USE_VERTEXAI=0' not in lines[i] and
-                    # Check if this is the first line after a code block start
-                    (i == 0 or not any('GOOGLE_GENAI_USE_VERTEXAI=0' in prev_line for prev_line in lines[max(0, i-3):i]))):
+                # Check if the next line looks like it should have a preceding line
+                if i < len(lines):
+                    next_line = lines[i]
                     
-                    logger.debug(f"Found code block with GOOGLE_API_KEY but missing first line: {repr(lines[i])}")
+                    # Detect patterns that suggest a missing first line
+                    missing_first_line = self._detect_missing_first_line_pattern(lines, i)
                     
-                    # Add the missing first line
-                    fixed_lines.append("GOOGLE_GENAI_USE_VERTEXAI=0")
-                    logger.debug("Added missing first line: GOOGLE_GENAI_USE_VERTEXAI=0")
+                    if missing_first_line:
+                        # Add the reconstructed first line
+                        fixed_lines.append(missing_first_line)
                     
                     # Add the existing line
-                    fixed_lines.append(lines[i])
+                    fixed_lines.append(next_line)
                     i += 1
                 else:
-                    # Normal content, keep it
-                    if i < len(lines):
-                        fixed_lines.append(lines[i])
-                        i += 1
+                    # No next line, just continue
+                    i += 1
             else:
                 fixed_lines.append(line)
                 i += 1
         
         return '\n'.join(fixed_lines)
+    
+    def _detect_missing_first_line_pattern(self, lines: List[str], current_index: int) -> str:
+        """
+        Detect if there's a missing first line pattern and reconstruct it.
+        
+        Args:
+            lines: All lines in the markdown content
+            current_index: Current line index
+            
+        Returns:
+            Reconstructed first line or empty string if no pattern detected
+        """
+        if current_index >= len(lines):
+            return ""
+        
+        current_line = lines[current_index]
+        
+        # Pattern 1: Environment variable blocks
+        if self._is_environment_variable_line(current_line):
+            return self._reconstruct_env_var_first_line(lines, current_index)
+        
+        # Pattern 2: Configuration blocks
+        if self._is_configuration_line(current_line):
+            return self._reconstruct_config_first_line(lines, current_index)
+        
+        # Pattern 3: Command blocks
+        if self._is_command_line(current_line):
+            return self._reconstruct_command_first_line(lines, current_index)
+        
+        # Pattern 4: Code blocks with specific patterns
+        if self._is_code_block_with_pattern(current_line):
+            return self._reconstruct_pattern_first_line(lines, current_index)
+        
+        return ""
+    
+    def _is_environment_variable_line(self, line: str) -> bool:
+        """Check if line looks like an environment variable."""
+        line = line.strip()
+        return ('=' in line and 
+                any(keyword in line.upper() for keyword in ['API_KEY', 'TOKEN', 'SECRET', 'PASSWORD', 'URL', 'HOST', 'PORT']))
+    
+    def _is_configuration_line(self, line: str) -> bool:
+        """Check if line looks like a configuration setting."""
+        line = line.strip()
+        return ('=' in line and 
+                any(keyword in line.upper() for keyword in ['ENABLED', 'DISABLED', 'TRUE', 'FALSE', 'MODE', 'LEVEL', 'TIMEOUT']))
+    
+    def _is_command_line(self, line: str) -> bool:
+        """Check if line looks like a command."""
+        line = line.strip()
+        return (line.startswith(('git ', 'npm ', 'pip ', 'docker ', 'kubectl ', 'aws ', 'gcloud ')) or
+                line.endswith((' --help', ' -h', ' --version', ' -v')))
+    
+    def _is_code_block_with_pattern(self, line: str) -> bool:
+        """Check if line has specific patterns that suggest missing first line."""
+        line = line.strip()
+        return any(pattern in line for pattern in [
+            'import ', 'from ', 'require(', 'include ', 'using ',
+            'function ', 'def ', 'class ', 'interface ',
+            'if __name__', 'if __main__', 'main(', 'public static void main'
+        ])
+    
+    def _reconstruct_env_var_first_line(self, lines: List[str], current_index: int) -> str:
+        """Reconstruct first line for environment variable blocks."""
+        current_line = lines[current_index].strip()
+        
+        # Extract the variable name
+        if '=' in current_line:
+            var_name = current_line.split('=')[0].strip()
+            
+            # Common patterns for environment variable blocks
+            if 'API_KEY' in var_name.upper():
+                # Look for related configuration variables
+                if 'GOOGLE' in var_name.upper():
+                    return "GOOGLE_GENAI_USE_VERTEXAI=0"
+                elif 'AZURE_OPENAI' in var_name.upper():
+                    return "AZURE_OPENAI_API_TYPE=azure"
+                elif 'OPENAI' in var_name.upper():
+                    return "OPENAI_API_TYPE=open_ai"
+                else:
+                    return f"{var_name.split('_')[0]}_ENABLED=true"
+            
+            elif 'TOKEN' in var_name.upper():
+                return f"{var_name.split('_')[0]}_AUTH_ENABLED=true"
+            
+            elif 'SECRET' in var_name.upper():
+                return f"{var_name.split('_')[0]}_SECURITY_ENABLED=true"
+            
+            elif 'URL' in var_name.upper():
+                return f"{var_name.split('_')[0]}_ENDPOINT_ENABLED=true"
+            
+            else:
+                # Generic pattern
+                base_name = var_name.split('_')[0]
+                return f"{base_name}_ENABLED=true"
+        
+        return ""
+    
+    def _reconstruct_config_first_line(self, lines: List[str], current_index: int) -> str:
+        """Reconstruct first line for configuration blocks."""
+        current_line = lines[current_index].strip()
+        
+        if '=' in current_line:
+            var_name = current_line.split('=')[0].strip()
+            
+            # Common configuration patterns
+            if 'ENABLED' in var_name.upper():
+                # Extract the base name before ENABLED
+                base_name = var_name.replace('_ENABLED', '').replace('_MODE_ENABLED', '').replace('_LEVEL_ENABLED', '')
+                return f"# Configuration for {base_name.lower()}"
+            elif 'MODE' in var_name.upper():
+                base_name = var_name.replace('_MODE', '')
+                return f"# Set {base_name.lower()} mode"
+            elif 'LEVEL' in var_name.upper():
+                base_name = var_name.replace('_LEVEL', '')
+                return f"# Set {base_name.lower()} level"
+            else:
+                return f"# Configuration: {var_name.split('_')[0].lower()}"
+        
+        return ""
+    
+    def _reconstruct_command_first_line(self, lines: List[str], current_index: int) -> str:
+        """Reconstruct first line for command blocks."""
+        current_line = lines[current_index].strip()
+        
+        # Common command patterns
+        if current_line.startswith('git '):
+            return "# Git commands"
+        elif current_line.startswith('npm '):
+            return "# NPM commands"
+        elif current_line.startswith('pip '):
+            return "# Python package management"
+        elif current_line.startswith('docker '):
+            return "# Docker commands"
+        elif current_line.startswith('kubectl '):
+            return "# Kubernetes commands"
+        elif current_line.startswith('aws '):
+            return "# AWS CLI commands"
+        elif current_line.startswith('gcloud '):
+            return "# Google Cloud commands"
+        else:
+            return "# Command examples"
+    
+    def _reconstruct_pattern_first_line(self, lines: List[str], current_index: int) -> str:
+        """Reconstruct first line for code blocks with specific patterns."""
+        current_line = lines[current_index].strip()
+        
+        # Programming language patterns
+        if current_line.startswith(('import ', 'from ')):
+            return "# Python imports"
+        elif current_line.startswith('require('):
+            return "# Node.js requires"
+        elif current_line.startswith('using '):
+            return "# C# using statements"
+        elif current_line.startswith(('function ', 'def ')):
+            return "# Function definitions"
+        elif current_line.startswith(('class ', 'interface ')):
+            return "# Class definitions"
+        elif 'if __name__' in current_line or 'if __main__' in current_line:
+            return "# Main entry point"
+        elif 'main(' in current_line:
+            return "# Main function"
+        else:
+            return "# Code example"
     
     def enhance_for_ai_agents(self, markdown_content: str) -> str:
         """
@@ -899,21 +765,10 @@ class MarkdownGenerator:
         Returns:
             Enhanced markdown content optimized for AI consumption
         """
-        # Debug: Check input content
-        logger.debug(f"enhance_for_ai_agents input length: {len(markdown_content)}")
-        if 'GOOGLE_GENAI_USE_VERTEXAI=0' in markdown_content:
-            logger.debug("✅ Found 'GOOGLE_GENAI_USE_VERTEXAI=0' in enhance_for_ai_agents input")
-        else:
-            logger.warning("❌ 'GOOGLE_GENAI_USE_VERTEXAI=0' NOT found in enhance_for_ai_agents input")
-        
         lines = markdown_content.split('\n')
         enhanced_lines = []
         
         for i, line in enumerate(lines):
-            # Debug: Check if this line contains our target content
-            if 'GOOGLE_GENAI_USE_VERTEXAI=0' in line:
-                logger.debug(f"Found target content in line {i}: {repr(line)}")
-            
             # Enhance code blocks for better AI parsing
             if line.startswith('```'):
                 # Check if this is a proper code block start (just ```) or if it has content
@@ -949,16 +804,218 @@ class MarkdownGenerator:
             else:
                 enhanced_lines.append(line)
         
-        result = '\n'.join(enhanced_lines)
+        return '\n'.join(enhanced_lines)
+    
+    def _apply_minimal_ai_optimization(self, markdown_content: str) -> str:
+        """
+        Apply minimal AI optimization for raw output.
         
-        # Debug: Check output content
-        logger.debug(f"enhance_for_ai_agents output length: {len(result)}")
-        if 'GOOGLE_GENAI_USE_VERTEXAI=0' in result:
-            logger.debug("✅ Found 'GOOGLE_GENAI_USE_VERTEXAI=0' in enhance_for_ai_agents output")
-        else:
-            logger.warning("❌ 'GOOGLE_GENAI_USE_VERTEXAI=0' NOT found in enhance_for_ai_agents output")
+        This provides basic improvements without changing the structure.
         
-        return result
+        Args:
+            markdown_content: Raw markdown content
+            
+        Returns:
+            Minimally optimized markdown content
+        """
+        lines = markdown_content.split('\n')
+        optimized_lines = []
+        
+        for line in lines:
+            # Basic code block detection and formatting
+            if line.strip().startswith('```'):
+                # Ensure proper code block formatting
+                if line.strip() == '```':
+                    optimized_lines.append('```')
+                else:
+                    # Line has content after ```, preserve it
+                    optimized_lines.append(line)
+            else:
+                # Preserve all other content as-is
+                optimized_lines.append(line)
+        
+        return '\n'.join(optimized_lines)
+    
+    def _reduce_empty_lines(self, markdown_content: str) -> str:
+        """
+        Reduce consecutive empty lines to single empty lines.
+        
+        This helps clean up the markdown output while preserving structure.
+        
+        Args:
+            markdown_content: Raw markdown content
+            
+        Returns:
+            Markdown content with reduced empty lines
+        """
+        lines = markdown_content.split('\n')
+        reduced_lines = []
+        previous_empty = False
+        
+        for line in lines:
+            current_empty = line.strip() == ''
+            
+            if current_empty:
+                if not previous_empty:
+                    # First empty line, keep it
+                    reduced_lines.append(line)
+                # Skip additional consecutive empty lines
+            else:
+                # Non-empty line, always keep it
+                reduced_lines.append(line)
+            
+            previous_empty = current_empty
+        
+        return '\n'.join(reduced_lines)
+    
+    def _apply_enhanced_ai_optimization(self, markdown_content: str) -> str:
+        """
+        Apply enhanced AI optimization for maximum AI compatibility.
+        
+        This provides comprehensive improvements for RAG systems and AI agents.
+        
+        Args:
+            markdown_content: Cleaned markdown content
+            
+        Returns:
+            Enhanced markdown content optimized for AI consumption
+        """
+        # Start with standard enhancement
+        enhanced_content = self.enhance_for_ai_agents(markdown_content)
+        
+        lines = enhanced_content.split('\n')
+        enhanced_lines = []
+        
+        for i, line in enumerate(lines):
+            # Enhanced code block optimization
+            if line.strip().startswith('```'):
+                if line.strip() == '```':
+                    # Add more specific language hints based on context
+                    if i + 1 < len(lines):
+                        next_line = lines[i + 1]
+                        # Detect language from content
+                        if any(keyword in next_line.lower() for keyword in ['def ', 'import ', 'from ']):
+                            enhanced_lines.append('```python')
+                        elif any(keyword in next_line.lower() for keyword in ['function ', 'const ', 'let ', 'var ']):
+                            enhanced_lines.append('```javascript')
+                        elif any(keyword in next_line.lower() for keyword in ['public class', 'private ', 'public ']):
+                            enhanced_lines.append('```java')
+                        elif any(keyword in next_line.lower() for keyword in ['<html', '<div', '<span']):
+                            enhanced_lines.append('```html')
+                        elif any(keyword in next_line.lower() for keyword in ['{', '}', 'color:', 'font-size:']):
+                            enhanced_lines.append('```css')
+                        elif any(keyword in next_line.lower() for keyword in ['{', '}', 'key:', 'value:']):
+                            enhanced_lines.append('```json')
+                        elif any(keyword in next_line.lower() for keyword in ['api_key', 'token', 'secret', 'password']):
+                            enhanced_lines.append('```env')
+                        else:
+                            enhanced_lines.append('```')
+                    else:
+                        enhanced_lines.append('```')
+                else:
+                    enhanced_lines.append(line)
+            else:
+                # Enhanced content optimization
+                enhanced_line = line
+                
+                # Add semantic markers for better AI understanding
+                if line.strip().startswith('#'):
+                    # Headers - add context
+                    if line.strip().startswith('# '):
+                        enhanced_line = line + " <!-- Main heading -->"
+                    elif line.strip().startswith('## '):
+                        enhanced_line = line + " <!-- Section heading -->"
+                    elif line.strip().startswith('### '):
+                        enhanced_line = line + " <!-- Subsection heading -->"
+                
+                # Add semantic context for lists
+                elif line.strip().startswith(('- ', '* ', '+ ')):
+                    enhanced_line = line + " <!-- List item -->"
+                
+                # Add semantic context for code
+                elif '`' in line and line.count('`') % 2 == 0:
+                    enhanced_line = line + " <!-- Inline code -->"
+                
+                enhanced_lines.append(enhanced_line)
+        
+        return '\n'.join(enhanced_lines)
+    
+    def _apply_token_optimization(self, markdown_content: str) -> str:
+        """
+        Apply token optimization to minimize token count while maintaining readability.
+        
+        This level focuses on reducing tokens for cost-effective RAG systems.
+        
+        Args:
+            markdown_content: Cleaned markdown content
+            
+        Returns:
+            Token-optimized markdown content
+        """
+        lines = markdown_content.split('\n')
+        optimized_lines = []
+        
+        for i, line in enumerate(lines):
+            optimized_line = line
+            
+            # Remove excessive whitespace
+            if line.strip():
+                # Remove leading/trailing whitespace
+                optimized_line = line.strip()
+                
+                # Remove excessive spaces between words (keep single space)
+                optimized_line = ' '.join(optimized_line.split())
+                
+                # Remove redundant punctuation
+                optimized_line = re.sub(r'[.!?]{2,}', '.', optimized_line)
+                optimized_line = re.sub(r'[,;]{2,}', ',', optimized_line)
+                
+                # Remove excessive dashes/underscores
+                optimized_line = re.sub(r'[-_]{3,}', '--', optimized_line)
+                
+                # Simplify headers (remove excessive #)
+                if line.startswith('#'):
+                    # Count # and keep only what's needed
+                    header_level = len(line) - len(line.lstrip('#'))
+                    if header_level > 6:
+                        header_level = 6
+                    optimized_line = '#' * header_level + ' ' + line.lstrip('#').strip()
+                
+                # Optimize code blocks
+                if line.strip().startswith('```'):
+                    # Remove language hints if they're generic
+                    if i + 1 < len(lines) and not lines[i + 1].startswith('```'):
+                        next_line = lines[i + 1].strip()
+                        if next_line in ['text', 'plain', 'none', '']:
+                            optimized_line = '```'
+                
+                # Remove semantic markers (save tokens)
+                optimized_line = re.sub(r'\s*<!--.*?-->', '', optimized_line)
+                
+                # Simplify list markers (standardize to -)
+                if re.match(r'^\s*[\*\+]\s+', optimized_line):
+                    optimized_line = re.sub(r'^\s*[\*\+]\s+', '- ', optimized_line)
+                
+                # Remove excessive blank lines (keep only one)
+                if optimized_line == '' and optimized_lines and optimized_lines[-1] == '':
+                    continue
+            
+            optimized_lines.append(optimized_line)
+        
+        # Final pass: remove consecutive empty lines
+        final_lines = []
+        previous_empty = False
+        
+        for line in optimized_lines:
+            if line.strip() == '':
+                if not previous_empty:
+                    final_lines.append(line)
+                previous_empty = True
+            else:
+                final_lines.append(line)
+                previous_empty = False
+        
+        return '\n'.join(final_lines)
     
     def get_filename_from_url(self, url: str) -> str:
         """Generate a filename from URL."""

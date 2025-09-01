@@ -27,13 +27,20 @@ logging.basicConfig(level=logging.INFO)
               help='URLs or URL patterns to exclude from crawling (can be used multiple times)')
 @click.option('--force-triple-backticks', is_flag=True, default=True, 
               help='Force triple backticks (```) instead of [code] syntax (default: True)')
+@click.option('--no-readme', is_flag=True, default=False,
+              help='Skip generation of README.md files for navigation')
+@click.option('--raw', is_flag=True, default=False,
+              help='Output raw markdown without any cleaning or fixing')
+@click.option('--ai-optimization', type=click.Choice(['minimal', 'standard', 'enhanced', 'token-optimized']), 
+              default='standard', help='Level of AI optimization (default: standard)')
+@click.option('--no-reduce-empty-lines', is_flag=True, help='Keep all empty lines (disable empty line reduction)')
 @click.option('--preview', is_flag=True,
               help='Preview conversion without actually converting')
 @click.option('--validate', is_flag=True,
               help='Validate URL accessibility before conversion')
 @click.option('--verbose', '-v', is_flag=True,
               help='Enable verbose logging')
-def main(url, output, depth, delay, exclude, force_triple_backticks, preview, validate, verbose):
+def main(url, output, depth, delay, exclude, force_triple_backticks, no_readme, raw, ai_optimization, no_reduce_empty_lines, preview, validate, verbose):
     """
     Convert a web document to markdown format.
     
@@ -50,7 +57,11 @@ def main(url, output, depth, delay, exclude, force_triple_backticks, preview, va
             max_depth=depth,
             delay=delay,
             exclude_urls=list(exclude) if exclude else None,
-            force_triple_backticks=force_triple_backticks
+            force_triple_backticks=force_triple_backticks,
+            generate_readme=not no_readme,
+            raw_output=raw,
+            ai_optimization_level=ai_optimization,
+            reduce_empty_lines=not no_reduce_empty_lines
         )
         
         # Validate URL if requested
@@ -92,6 +103,14 @@ def main(url, output, depth, delay, exclude, force_triple_backticks, preview, va
         if exclude:
             click.echo(f"🚫 Excluding URLs: {', '.join(exclude)}")
         click.echo(f"📝 Code blocks: {'Triple backticks (```)' if force_triple_backticks else 'Standard markdown'}")
+        click.echo(f"📖 README generation: {'Disabled' if no_readme else 'Enabled'}")
+        click.echo(f"🔧 Post-processing: {'Disabled (raw)' if raw else 'Enabled (cleaned)'}")
+        click.echo(f"🤖 AI optimization: {ai_optimization.title()}")
+        click.echo(f"📝 Empty lines: {'Reduced to single lines' if not no_reduce_empty_lines else 'All preserved'}")
+        if raw:
+            click.echo(f"💡 Note: Raw output will use {ai_optimization} AI optimization level")
+            if force_triple_backticks:
+                click.echo(f"💡 Note: Triple backticks will be applied even to raw output")
         click.echo()
         
         # Convert
@@ -104,7 +123,10 @@ def main(url, output, depth, delay, exclude, force_triple_backticks, preview, va
         click.echo(f"📁 Output directory: {result['output_directory']}")
         click.echo(f"🕐 Conversion timestamp: {result['conversion_timestamp']}")
         
-        click.echo(f"\n📖 Start browsing your converted documents in: {output}/README.md")
+        if not no_readme:
+            click.echo(f"\n📖 Start browsing your converted documents in: {output}/README.md")
+        else:
+            click.echo(f"\n📁 Your converted documents are in: {output}/")
         
     except KeyboardInterrupt:
         click.echo("\n❌ Conversion interrupted by user")
